@@ -32,7 +32,7 @@ ONVIF (media profiles, GetStreamUri) → FFmpeg RTSP (warm-up; v nasadení od 5.
 
 ## Nasadenie a overenie 5. 11. 2026 – presný timer a odstránenie OSD času
 
-**Stav:** Overené na produkčnom notebooku Linux Mint pre kameru Arenti C3 (Hybe). Tieto zmeny boli vykonané na lokálnom systéme. **Pozor:** táto aktualizácia súboru `HELP.md` sama osebe nemení `arenti_publisher.py`, `install_timer.py` ani systemd jednotky v repozitári GitHub; pred nasadením na ďalší počítač treba príslušné zmeny preniesť do zdrojového kódu/installeru.
+**Stav:** Overené na produkčnom notebooku Linux Mint pre kameru Arenti C3 (Hybe). Zmeny filtra `delogo` a pevného harmonogramu sú od synchronizácie 5. 11. 2026 zapracované aj v GitHub zdroji `arenti_publisher.py` a inštalátore `install_timer.py`. **Pozor:** presná binárna zhoda celej lokálnej produkčnej kópie a GitHub súboru ešte nebola overená. Existujúce produkčné systemd jednotky sa úpravou repozitára nemenia.
 
 ### Skutočné umiestnenia v prevádzke
 
@@ -140,7 +140,7 @@ python3 -m py_compile /home/mpca86/arenti-publisher/arenti_publisher.py
 1. Skontrolovať `delogo` aj na **dennej** snímke (obloha pri OSD).
 2. Pri väčšom počte cyklov sledovať retry/čas na upload a rezervu do načítania APP.
 3. Ak je potrebné presné párovanie obrazu a meteomeraní, doplniť bezpečný záznam `captured_at` / `uploaded_at` a overiť skutočný čas HTTP načítania obrázka aplikáciou.
-4. Zosúladiť implementáciu a installer v GitHub repozitári s nasadenými lokálnymi zmenami, prípadne pripraviť verziované vydanie.
+4. **GitHub implementácia a inštalátor zosúladené** s overeným postupom (5. 11. 2026); pred označením nového vydania ešte porovnať celý produkčný súbor, overiť nový inštalačný postup v čistom prostredí a rozhodnúť o verziovanom vydaní.
 
 ## Známe obmedzenia
 
