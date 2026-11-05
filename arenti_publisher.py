@@ -93,7 +93,7 @@ def capture(c, uri, output):
     # -ss after -i means decode actual stream before the screenshot (fixes initial grey frames).
     cmd = [ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
            '-rtsp_transport', 'tcp', '-stimeout', '8000000', '-i', uri,
-           '-ss', str(warmup), '-frames:v', '1', '-q:v', str(c['capture'].getint('jpeg_quality', 2)), str(output)]
+           '-ss', str(warmup), '-vf', 'delogo=x=22:y=22:w=665:h=75:show=0', '-frames:v', '1', '-q:v', str(c['capture'].getint('jpeg_quality', 2)), str(output)]
     for opt in ('-stimeout', '-timeout'):
         # FFmpeg builds disagree on timeout argument naming.
         cmd[cmd.index('-timeout') if '-timeout' in cmd else cmd.index('-stimeout')] = opt
