@@ -104,6 +104,14 @@ Všetkých päť behov: platná snímka na **prvý z troch povolených pokusov**
 - FTPS publikovanie cez `curl` + premenovanie dočasného súboru ostalo funkčné.
 - Pridaný filter nespôsobil významné spomalenie v týchto dvoch behoch.
 
+### Záverečné porovnanie GitHub ↔ produkcia (5. 11. 2026)
+
+- Stiahnutý `arenti_publisher.py` z vetvy `main` a lokálny súbor `/home/mpca86/arenti-publisher/arenti_publisher.py` porovnané pomocou `cmp -s`: **PASS, identické bajty**.
+- `python3 -m py_compile` pre stiahnuté `arenti_publisher.py`, `install_timer.py` a `test_timer_schedule.py`: **PASS**.
+- `python3 -m unittest discover -s <dočasný adresár> -p 'test_timer_schedule.py' -v`: **8/8 PASS** (0,002 s); testy zahŕňajú default Hybe, offsety, hodinový interval, legacy režim a neplatné parametre.
+- Diagnostika len čítala súbory a spúšťala testy v dočasnom priečinku; **produkčný skript a systemd jednotky zostali bez zmeny**.
+- Zhodu `install_timer.py` s lokálnou (ak existuje) kópiou táto kontrola netestovala; unit testy takisto **nenahrádzajú čistú inštaláciu** na ďalšom počítači.
+
 ### Zálohy, diagnostika a rollback
 
 **Lokálna záloha skriptu pred vložením filtra:**
@@ -140,7 +148,7 @@ python3 -m py_compile /home/mpca86/arenti-publisher/arenti_publisher.py
 1. Skontrolovať `delogo` aj na **dennej** snímke (obloha pri OSD).
 2. Pri väčšom počte cyklov sledovať retry/čas na upload a rezervu do načítania APP.
 3. Ak je potrebné presné párovanie obrazu a meteomeraní, doplniť bezpečný záznam `captured_at` / `uploaded_at` a overiť skutočný čas HTTP načítania obrázka aplikáciou.
-4. **GitHub implementácia a inštalátor zosúladené** s overeným postupom (5. 11. 2026); pred označením nového vydania ešte porovnať celý produkčný súbor, overiť nový inštalačný postup v čistom prostredí a rozhodnúť o verziovanom vydaní.
+4. **GitHub implementácia a inštalátor zosúladené.** Produkčný `arenti_publisher.py` a `main` sú bitovo identické; 8/8 testov časovača a kontrola syntaxe prešli na produkčnom Linux Mint (5. 11. 2026). Pred vydaním zostáva overiť nový inštalačný postup v čistom prostredí a rozhodnúť o verziovanom vydaní.
 
 ## Známe obmedzenia
 
