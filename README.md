@@ -9,19 +9,19 @@
 ## Funkcie
 
 - **ONVIF**: automatické získanie dostupného RTSP streamu bez ručného vypisovania jeho adresy.
-- **FFmpeg**: zachytenie jediného JPEG záberu z RTSP (warm-up odstraňuje počiatočné sivé snímky).
+- **FFmpeg**: zachytenie jediného JPEG záberu z RTSP (warm-up odstraňuje počiatočné sivé snímky). Vo verzii použitej v Hybe sa priamo pri zachytení aplikuje aj `delogo` na odstránenie časovej pečiatky z kamery.
 - **3 pokusy**: ak prvá fotografia nevyhovuje, zopakuje snímkovanie s dlhším rozbehom.
 - **Kontrola kvality**: JPEG formát, veľkosť, rozlíšenie a minimálna variabilita jasu.
 - **FTPS upload**: šifrované nahranie cez `curl`, následne premenovanie do `latest.jpg`. Výpadok alebo nekvalitná fotografia neprepíše poslednú platnú snímku.
-- **systemd user timer**: pravidelná aktualizácia približne 5 minút po dokončení cyklu.
+- **systemd user timer**: pevný 5-minútový kalendárny harmonogram pre Hybe (`:04, :09, :14, :19, ...`) bez postupného časového posunu. Starý režim od ukončenia služby je dostupný voliteľne.
 - **Logovanie**: systemd journal a rotujúci log súbor.
 - **Voliteľný externý dohľad cez Make.com**: samostatná kontrola HTTP `Last-Modified` a e-mail pri výpadku/obnovení (konfigurácia v `docs/MAKE_MONITOR.md`).
 
 ## Ako to funguje
 
 ```text
-Arenti C3 --ONVIF--> RTSP URI --FFmpeg--> JPEG --kontrola kvality--> FTPS --> web/latest.jpg
-     Linux Mint notebook  --systemd timer (~5 min)--> Publisher
+Arenti C3 --ONVIF--> RTSP URI --FFmpeg + delogo--> JPEG --kontrola kvality--> FTPS --> web/latest.jpg
+     Linux Mint notebook --systemd OnCalendar (:04/5)--> Publisher
                                                   |
                                                   v
                                     Make.com HEAD Last-Modified
@@ -62,12 +62,12 @@ Očakávané udalosti v logu: `KVALITA OK`, `UPLOAD OK`, `CYKLUS OK`. Fotografia
 ### Automatické spustenie
 
 ```bash
-.venv/bin/python install_timer.py --minutes 5
+.venv/bin/python install_timer.py --minutes 5 --schedule calendar --minute-offset 4
 systemctl --user list-timers --all arenti-publisher.timer
 journalctl --user -u arenti-publisher.service -n 40 --no-pager
 ```
 
-Installer používa interpreter, ktorým ho spustíš; spusti ho preto cez `.venv/bin/python`. Služba sa končí po jednom cykle a časovač naplánuje ďalší. Pre fungovanie po odhlásení z Linuxu voliteľne povoľ `sudo loginctl enable-linger "$USER"`. Notebook stále nesmie zaspať; pri zatvorení veka a pri strate napájania platia nastavenia distribúcie.
+Installer používa interpreter, ktorým ho spustíš; spusti ho preto cez `.venv/bin/python`. **Pozor: opätovné spustenie inštalátora prepíše lokálne systemd jednotky**, preto si ich pri existujúcom nasadení najprv zálohuj. Predvolená schéma je už `--schedule calendar --minutes 5` s posunom 4 minúty: snímanie sa spúšťa podľa hodín každých 5 minút, nie 5 minút po ukončení služby. Pre starý spôsob použi `--schedule interval`. Kalendárny režim vyžaduje interval deliaci 60; iné intervaly používaj cez `--schedule interval`. Pre fungovanie po odhlásení z Linuxu voliteľne povoľ `sudo loginctl enable-linger "$USER"`. Notebook stále nesmie zaspať; pri zatvorení veka a pri strate napájania platia nastavenia distribúcie.
 
 ### Logy a diagnostika
 
@@ -84,7 +84,18 @@ Súborový log je v `[storage] directory/logs/publisher.log` a rotuje pri pribli
 - Ak FTPS v Pythone hlási `425` alebo TLS EOF, nahrávanie cez `curl` môže fungovať správne aj vtedy, keď `ftplib.FTP_TLS.storbinary` zlyhá.
 - Ak FTPS server odmieta premenovanie `RNTO`, program štandardne starú fotografiu nemaže. Nezapínaj `allow_nonatomic_replace` bez pochopenia dôsledkov.
 - Sivé snímky sa môžu objaviť napr. pri prepnutí nočného režimu. Ochrana kvality nemusí odhaliť všetky chyby a príliš prísny prah môže odmietnuť aj platnú nočnú fotografiu.
+- Filter `delogo=x=22:y=22:w=665:h=75:show=0` je overený pre Hybe pri **2560 × 1440**. Je vložený do jedného FFmpeg procesu v `capture()`; pri inom rozlíšení alebo umiestnení OSD uprav súradnice v skripte. Filter môže vytvoriť vyhladenú oblasť, najmä za denného svetla. Pri potrebe zachovania pôvodného časového údaja si odlož samostatnú časovú pečiatku v logu/metadatach.
 - Pred akýmkoľvek verejným použitím kamery zváž súkromie osôb, susedov a cudzích pozemkov v zábere.
+
+## Overenie po nasadení
+
+```bash
+python3 -m unittest discover -s tests -v
+systemd-analyze calendar --iterations=5 '*-*-* *:04/5:00'
+journalctl --user -u arenti-publisher.service -n 30 --no-pager
+```
+
+Testy timeru sú lokálne unit testy a nepreukazujú úspech reálneho FTPS prenosu; produkčné výsledky z Hybe sú zdokumentované v [HELP.md](HELP.md).
 
 ## Dokumentácia
 
