@@ -67,6 +67,24 @@ class HeartbeatTests(unittest.TestCase):
             self.assertTrue(send_success_heartbeat(cfg(
                 'http://10.42.0.2:3001/api/push/SECRET', extra='allow_private_http = yes\n'), 7, self.log))
 
+    def test_private_vhost_host_header(self):
+        with patch('arenti_heartbeat.build_opener') as op:
+            op.return_value.open.return_value = FakeResponse()
+            private = cfg(
+                'http://192.168.196.150:3001/api/push/SECRET',
+                extra='allow_private_http = yes\\nhost_header = monitoring:3001\\n')
+            self.assertTrue(send_success_heartbeat(private, 11.2, self.log))
+            request = op.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_header('Host'), 'monitoring:3001')
+            self.assertIn('192.168.196.150', request.full_url)
+
+    def test_reject_host_header_injection(self):
+        with patch('arenti_heartbeat.build_opener') as op:
+            private = cfg('http://192.168.196.150:3001/api/push/SECRET',
+                          extra='allow_private_http = yes\\nhost_header = not-valid/path\\n')
+            self.assertFalse(send_success_heartbeat(private, 11, self.log))
+            op.assert_not_called()
+
     def test_no_secret_logged_on_error(self):
         with patch('arenti_heartbeat.build_opener') as op:
             op.return_value.open.side_effect = RuntimeError('https://example.test/api/push/SECRET')
