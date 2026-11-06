@@ -33,7 +33,7 @@ Arenti C3 --ONVIF--> RTSP URI --FFmpeg + delogo--> JPEG --kontrola kvality--> FT
 
 Na Synology vytvor **Push** monitor a nastav očakávaný interval približne **420 sekúnd** (5-minútový Publisher + rezerva), **1 opakovanie** s intervalom **60 sekúnd**. Zapni existujúce Signal oznámenie. Monitor poskytne unikátnu URL s tokenom – **token nepísať do ticketov, screenshotov ani GitHubu**.
 
-Na Linux Mint musí byť adresa dostupná z notebooku. Preferované je HTTPS s platným TLS alebo `http://<súkromná-ZeroTier-IP-NAS>:3001` cez funkčnú a súkromnú ZeroTier sieť. **Neotváraj port 3001 verejne len kvôli heartbeat monitoringu.** V prípade HTTP sa vyžaduje privátna IP a explicitné `allow_private_http=yes`.
+Na Linux Mint musí byť adresa dostupná z notebooku. Preferované je HTTPS s platným TLS alebo `http://<súkromná-ZeroTier-IP-NAS>:3001` cez funkčnú a súkromnú ZeroTier sieť. **Neotváraj port 3001 verejne len kvôli heartbeat monitoringu.** V prípade HTTP sa vyžaduje privátna IP a explicitné `allow_private_http=yes`. Niektoré Synology nginx nastavenia vyžadujú aj konkrétnu HTTP hlavičku `Host`; vtedy slúži voliteľná položka `host_header = monitoring:3001` (iba pre privátne HTTP). Táto položka nemení DNS ani cieľovú IP.
 
 Do súkromného lokálneho súboru `arenti_config.ini` (práva `chmod 600`) doplň:
 
@@ -42,10 +42,11 @@ Do súkromného lokálneho súboru `arenti_config.ini` (práva `chmod 600`) dopl
 enabled = yes
 push_url = https://PRIVATE-MONITOR.example/api/push/REPLACE_WITH_PRIVATE_TOKEN
 allow_private_http = no
+host_header =
 timeout_seconds = 3
 ```
 
-Ak používaš ZeroTier privátnu IP cez HTTP, nastav `allow_private_http = yes` a použi `http://<privátna IP>:3001/api/push/...`. **Príklad obsahuje zástupný token, nikdy skutočný.**
+Ak používaš ZeroTier privátnu IP cez HTTP, nastav `allow_private_http = yes` a použi `http://<privátna IP>:3001/api/push/...`. Pri nasadení v Hybe je potrebné pridať `host_header = monitoring:3001`, pretože server pri priamej IP vracia nginx 404, ale pri virtuálnom hostiteľovi `monitoring` vracia správne API 200. **Príklad obsahuje zástupný token, nikdy skutočný.**
 
 Heartbeat sa odošle **iba po úspešnom vzdialenom FTPS rename**. Uptime Kuma dostane `status=up`, správu `FTPS upload OK` a dĺžku cyklu (`ping` v ms). Ak sa Publisher nevyvolá, snímka zlyhá alebo FTP zlyhá, heartbeat sa neposiela; Kuma po tolerancii prejde do DOWN. Ak je monitoring nedostupný, Publisher zapíše `HEARTBEAT FAIL: <typ chyby>`, ale cyklus zostane úspešný. Monitorovacia URL sa nikdy nevypisuje do logu. Presmerovania HTTP sú zakázané, aby token neunikol na iný host.
 
