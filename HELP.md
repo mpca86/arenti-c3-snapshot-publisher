@@ -150,6 +150,89 @@ python3 -m py_compile /home/mpca86/arenti-publisher/arenti_publisher.py
 3. Ak je potrebné presné párovanie obrazu a meteomeraní, doplniť bezpečný záznam `captured_at` / `uploaded_at` a overiť skutočný čas HTTP načítania obrázka aplikáciou.
 4. **GitHub implementácia a inštalátor zosúladené.** Produkčný `arenti_publisher.py` a `main` sú bitovo identické; 8/8 testov časovača a kontrola syntaxe prešli na produkčnom Linux Mint (5. 11. 2026). Pred vydaním zostáva overiť nový inštalačný postup v čistom prostredí a rozhodnúť o verziovanom vydaní.
 
+## Prevencia uspávania a RTC wakeup – 6. 11. 2026
+
+**Incident:** Notebook IdeaPad prešiel 6. 11. 2026 o 04:01:50 CET do `suspend` (`deep`), čím sa zastavili SSH/sieť a publikovanie snímok. O 13:24 nasledovala aktivita po prebudení, po reštarte 13:25 sa publikovanie obnovilo. Bezprostredne pred suspendom je v logoch `ACPI BIOS Error` (`TPWR`, `AE_NOT_FOUND`), ale **nebola jednoznačne potvrdená príčina** spánku (napr. zatvorené veko, prechod na batériu alebo udalosť firmvéru). Neoznačovať ACPI hlásenie za dokázanú príčinu.
+
+### Ochrana pred uspávaním pri zatvorení veka
+
+Používateľ `mpca86` nastavil v Cinnamon power nastaveniach `lid-close-ac-action` a `lid-close-battery-action` na `nothing`. Automatický suspend pri nečinnosti má AC aj batéria vypnutý (`sleep-inactive-*-timeout=0`); vypnutie displeja po 1800 s ostáva. Ochrana kritickej batérie zostala bez zmeny.
+
+Záložná konfigurácia systemd-logind:
+
+```text
+/etc/systemd/logind.conf.d/90-arenti-lid.conf
+```
+
+```ini
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+```
+
+Načítané signalizáciou `SIGHUP` pre `systemd-logind`; log potvrdil `Config file reloaded`, služba zostala `active`. Počas diagnostiky bol aktívny inhibitor Cinnamon `csd-power` pre `handle-lid-switch`. **Skutočný test so zatvoreným vekom zatiaľ neprebehol**, pretože správca nebol fyzicky pri notebooku.
+
+### Systémový RTC wakeup timer (záložná poistka)
+
+Overená diagnostika: `/dev/rtc0`, `/sys/class/rtc/rtc0/wakealarm`, `/sys/class/rtc/rtc0/device/power/wakeup=enabled`, `/sys/power/mem_sleep=s2idle [deep]`, `rtcwake -m show` hlásil pôvodne `alarm: off`. Systemd verzia `249`.
+
+Nové systémové jednotky (na rozdiel od user timeru Publishera):
+
+```text
+/etc/systemd/system/arenti-rtc-wakeup.service
+/etc/systemd/system/arenti-rtc-wakeup.timer
+```
+
+Service má `Type=oneshot` a `ExecStart=/usr/bin/logger -t arenti-rtc-wakeup RTC_WAKE_TIMER_TICK`.
+
+```ini
+[Unit]
+Description=Arenti RTC wakeup every 10 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/10:00
+WakeSystem=true
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=arenti-rtc-wakeup.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Aktivácia `sudo systemctl daemon-reload && sudo systemctl enable --now arenti-rtc-wakeup.timer`. Overené `active`, `enabled`, `WakeSystem=yes`.
+
+**Reálne testy 6. 11. 2026 (PASS pri zapnutom systéme):** `RTC_WAKE_TIMER_TICK` v systémovom journale presne 14:20:00 a 14:30:00 CET. `arenti-rtc-wakeup.service`: `Result=success`, `ExecMainStatus=0`. Súbežne úspešne publikoval Arenti Publisher JPEG/FTPS o 14:14, 14:19, 14:24 a 14:29 (trvania 11,6 / 11,5 / 16,5 / 11,3 s). V týchto behoch sa nový RTC timer neprejavil ako prekážka.
+
+**Limit:** Tieto heartbeat testy dokladajú pravidelné vykonanie timeru, **nie fyzické prebudenie zo suspendu**. Podpora RTC wake je len predpoklad; funkciu treba fyzicky overiť kontrolovaným testom `deep suspend → RTC wake` s lokálne prítomnou osobou. Pri strate napájania, úplnom vypnutí, závade firmware či zlyhaní RTC alarmu nie je automatické obnovenie garantované. RTC timer nenahrádza externý dohľad.
+
+### Diagnostika / rollback ochrany napájania
+
+```bash
+gsettings get org.cinnamon.settings-daemon.plugins.power lid-close-ac-action
+gsettings get org.cinnamon.settings-daemon.plugins.power lid-close-battery-action
+systemd-analyze cat-config systemd/logind.conf | grep '^HandleLidSwitch'
+systemctl list-timers --all --no-pager arenti-rtc-wakeup.timer
+systemctl show arenti-rtc-wakeup.timer -p WakeSystem
+journalctl -t arenti-rtc-wakeup --since '60 minutes ago' -o short-iso --no-pager
+journalctl --user -u arenti-publisher.service --since '60 minutes ago' --no-pager
+```
+
+Bezpečné vypnutie záložného RTC timeru (bez zmeny Publishera):
+
+```bash
+sudo systemctl disable --now arenti-rtc-wakeup.timer
+```
+
+Návrat k pôvodnému správaniu veka len pri výslovnom rozhodnutí správcu: obnoviť pôvodné Cinnamon hodnoty (pred zmenou `lid-close-ac-action='nothing'`, `lid-close-battery-action='suspend'`), odstrániť vyššie uvedený vlastný `90-arenti-lid.conf` po kontrole jeho obsahu a znovu načítať konfiguráciu `systemd-logind` signálom HUP. **Neskrývať pri tom fakt, že návrat k `suspend` môže obnoviť riziko nočného výpadku.**
+
+### Otvorené body po incidente
+
+1. Bez rizika vzdialeného odpojenia vykonať lokálne asistovaný test prebudenia z režimu `deep` a zatvoreného veka.
+2. Nastaviť externý monitoring dostupnosti notebooku/aktuálnosti `latest.jpg` (napr. Uptime Kuma), aby bol výpadok rozpoznaný včas.
+3. Pri opakovanom uspávaní vyšetriť ACPI/BIOS udalosti a zdroj suspend požiadavky; zatiaľ nie je preukázané, čo suspend o 04:01 iniciovalo.
+
 ## Známe obmedzenia
 
 - Závisí od dostupnosti notebooku, siete, kamery a hostingu.
