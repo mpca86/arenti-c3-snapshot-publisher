@@ -270,15 +270,16 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 - Logy obsahujú neblokujúce upozornenie na `/run` mount, no služby Signal API a JSON-RPC úspešne štartujú.
 - **Zostáva:** izolovaný test prechodu Uptime Kuma monitoru DOWN → RECOVERY a doručenia oboch upozornení. Starý image `<none>` zatiaľ nemažme, kým nebude stabilita dlhšie overená.
 
-### M3 – pripravený izolovaný test Uptime Kuma DOWN → RECOVERY (6. 11. 2026)
+### M3 – izolovaný test Uptime Kuma DOWN → RECOVERY (6. 11. 2026)
 
-**Stav:** súbor `health-test.php` pripravený a lokálne otestovaný; **nie je potvrdené nasadenie na HostCreators ani vytvorenie testovacieho monitoru**.
+**Stav: PASS pre HTTP monitorovanie (200 → 503 → 200).** `health-test.php` bol nasadený na HostCreators a vytvorený testovací Uptime Kuma monitor **#42 – TEST – HYBE – DOWN RECOVERY**. Samostatné doručenie Signal správ DOWN a RECOVERY zatiaľ nie je podložené screenshotom; používateľ potvrdil vykonaný recovery test.
 
 - Umiestnenie po nasadení: `/hybe/public/camera/health-test.php` (samostatný endpoint vedľa produkčného `health.php`).
 - **Normálne HTTP 200** (`status=ok`); po vytvorení `/hybe/public/camera/hybe-monitor-test-down.flag` vracia **HTTP 503** (`status=down`); po odstránení flagu znovu **HTTP 200**. Stav nemožno prepínať cez GET/POST URL a skript sa vôbec nedotýka `latest.jpg`.
 - JSON vracia `service=hybe-camera-monitor-test`, `test_only=true`, `checked_at` a `reason`. Cache je zakázaná.
 - Lokálne testy PHP syntaxe a simulovaného webservera **PASS: HTTP 200 → 503 → 200**.
-- Po nahratí samotného `health-test.php` overiť samostatnú URL a vytvoriť **nový dočasný HTTP(s) monitor** (60 s, retry 2, retry delay 30 s, 200–299, Signal notifikácia). Pri ďalšom kroku nahrať len flag, počkať na DOWN + Signal, odstrániť flag, overiť RECOVERY + Signal. Produkčný monitor #41, `health.php`, `latest.jpg` a Publisher nesmú byť upravované.
+- **Produkčný test Uptime Kuma #42:** UP o **20:36:58** (`200 – OK`) → DOWN o **20:39:58** (`Request failed with status code 503`) → UP/RECOVERY o **20:41:58** (`200 – OK`). Screenshot monitora potvrdzuje správne prepnutie stavov, finálny stav **Dostupné** a poslednú odozvu 89 ms.
+- Test vykonaný cez samostatný endpoint, bez nutnosti upraviť produkčný `health.php`, `latest.jpg`, Publisher alebo monitor #41. Doručenie oboch notifikácií Signal ešte treba potvrdiť osobitne (screenshot Uptime Kuma nepreukazuje doručenie).
 - **Upratovanie:** po úspešnom teste zrušiť dočasný monitor a testovacie súbory, ak už nebudú potrebné; produkčný monitor #41 ponechať.
 
 ## Známe obmedzenia
