@@ -50,7 +50,7 @@ Ak používaš ZeroTier privátnu IP cez HTTP, nastav `allow_private_http = yes`
 
 Heartbeat sa odošle **iba po úspešnom vzdialenom FTPS rename**. Uptime Kuma dostane `status=up`, správu `FTPS upload OK` a dĺžku cyklu (`ping` v ms). Ak sa Publisher nevyvolá, snímka zlyhá alebo FTP zlyhá, heartbeat sa neposiela; Kuma po tolerancii prejde do DOWN. Ak je monitoring nedostupný, Publisher zapíše `HEARTBEAT FAIL: <typ chyby>`, ale cyklus zostane úspešný. Monitorovacia URL sa nikdy nevypisuje do logu. Presmerovania HTTP sú zakázané, aby token neunikol na iný host.
 
-Táto funkcia je **v predvolenej konfigurácii vypnutá**. Po nasadení over `UPLOAD OK`, `HEARTBEAT OK` a `CYKLUS OK` v systemd journale. Testy bežia bez skutočnej siete alebo tokenu: `python3 -m unittest discover -s tests -p 'test_heartbeat.py' -v`.
+Táto funkcia je **v predvolenej konfigurácii vypnutá**. Po nasadení over `UPLOAD OK`, `HEARTBEAT OK` a `CYKLUS OK` v systemd journale. Izolované testy bežia bez skutočnej siete alebo tokenu (vrátane testov Host hlavičky): `python3 -m unittest discover -s tests -p 'test_heartbeat.py' -v`.
 
 ## Rýchla inštalácia (Debian / Ubuntu / Linux Mint)
 
