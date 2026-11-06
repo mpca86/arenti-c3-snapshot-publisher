@@ -233,6 +233,27 @@ Návrat k pôvodnému správaniu veka len pri výslovnom rozhodnutí správcu: o
 2. Nastaviť externý monitoring dostupnosti notebooku/aktuálnosti `latest.jpg` (napr. Uptime Kuma), aby bol výpadok rozpoznaný včas.
 3. Pri opakovanom uspávaní vyšetriť ACPI/BIOS udalosti a zdroj suspend požiadavky; zatiaľ nie je preukázané, čo suspend o 04:01 iniciovalo.
 
+## M1 – externý monitoring aktuálnosti snímky (6. 11. 2026)
+
+**Stav: produkčný test PASS, M2 (Uptime Kuma) zatiaľ nenastavená.**
+
+- Implementácia: `/hybe/public/camera/health.php` na HostCreators, vedľa `latest.jpg`.
+- Verejná URL: `https://hybe.lovcimrazov.sk/camera/health.php`.
+- Bez DB, cronu alebo prístupu k notebooku. Skript kontroluje lokálny `latest.jpg`, jeho `filemtime`, minimálnu veľkosť **20 000 B**, typ JPEG, koncové bajty JPEG a rozmery aspoň **1280 × 720**.
+- Limit veku **720 sekúnd / 12 minút** pri typickom 5-minútovom nahrávaní.
+- Pri platnom aktuálnom súbore HTTP **200** a `"status":"ok"`; pri chýbajúcom, poškodenom, nečitateľnom alebo zastaranom JPEG HTTP **503** a príslušný stav (`missing`, `invalid_image`, `unreadable`, `stale`, prípadne `error`/`clock_skew`).
+- JSON obsahuje `checked_at`, `last_modified_at`, `age_seconds`, `max_age_seconds`, `image_bytes`, `image_width`, `image_height`. Časy sú v `Europe/Bratislava`.
+- Cache zakázaná (`Cache-Control: no-store, no-cache...`). Endpoint nevracia prihlasovacie údaje ani interné absolútne serverové cesty.
+- Dôležité: `last_modified_at` je súborový čas publikovania na HostCreators, **nie presný okamih `captured_at`**. Samotné HTTP 200 pre `latest.jpg` nie je dostatočná kontrola aktuálnosti.
+
+**Overenie na produkcii (6. 11. 2026):**
+
+- Prehliadač: `service=hybe-camera`, `status=ok`, `checked_at=2026-11-06T19:25:28+01:00`, `last_modified_at=2026-11-06T19:24:26+01:00`, `age_seconds=62`, `image_bytes=73429`, `2560 × 1440`.
+- PowerShell `curl.exe -i https://hybe.lovcimrazov.sk/camera/health.php`: **HTTP/1.1 200 OK**, `Content-Type: application/json`; `checked_at=19:25:57`, `age_seconds=91`, rovnaký `last_modified_at`, správne no-cache hlavičky.
+- Lokálne testy endpointu pred nasadením: platná/stará/poškodená/chýbajúca snímka (4/4 PASS podľa testov implementácie). **Produkčný test HTTP 503 simuláciou výpadku ešte neprebehol**.
+
+**Nasledujúca etapa M2:** Na Synology Uptime Kuma vytvoriť monitor typu `HTTP(s)` pre health URL. Odporúčané `GET`, interval 60 s, retry 2, retry interval 30 s, akceptované kódy `200-299`; `503` znamená DOWN. Notifikácie a kontrolovanú simuláciu stale zapínať až po overení prvých heartbeatov. Bežné publikovanie ani produkčnú fotografiu pri testovaní neničiť.
+
 ## Známe obmedzenia
 
 - Závisí od dostupnosti notebooku, siete, kamery a hostingu.
