@@ -272,15 +272,30 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 
 ### M3 – izolovaný test Uptime Kuma DOWN → RECOVERY (6. 11. 2026)
 
-**Stav: PASS pre HTTP monitorovanie (200 → 503 → 200).** `health-test.php` bol nasadený na HostCreators a vytvorený testovací Uptime Kuma monitor **#42 – TEST – HYBE – DOWN RECOVERY**. Samostatné doručenie Signal správ DOWN a RECOVERY zatiaľ nie je podložené screenshotom; používateľ potvrdil vykonaný recovery test.
+**Stav: PASS pre HTTP monitorovanie (200 → 503 → 200).** `health-test.php` bol nasadený na HostCreators a vytvorený testovací Uptime Kuma monitor **#42 – TEST – HYBE – DOWN RECOVERY**. Používateľ následne výslovne potvrdil, že **obe Signal oznámenia DOWN aj RECOVERY boli doručené**. Celý integračný test HTTP → Kuma → Signal je PASS.
 
 - Umiestnenie po nasadení: `/hybe/public/camera/health-test.php` (samostatný endpoint vedľa produkčného `health.php`).
 - **Normálne HTTP 200** (`status=ok`); po vytvorení `/hybe/public/camera/hybe-monitor-test-down.flag` vracia **HTTP 503** (`status=down`); po odstránení flagu znovu **HTTP 200**. Stav nemožno prepínať cez GET/POST URL a skript sa vôbec nedotýka `latest.jpg`.
 - JSON vracia `service=hybe-camera-monitor-test`, `test_only=true`, `checked_at` a `reason`. Cache je zakázaná.
 - Lokálne testy PHP syntaxe a simulovaného webservera **PASS: HTTP 200 → 503 → 200**.
 - **Produkčný test Uptime Kuma #42:** UP o **20:36:58** (`200 – OK`) → DOWN o **20:39:58** (`Request failed with status code 503`) → UP/RECOVERY o **20:41:58** (`200 – OK`). Screenshot monitora potvrdzuje správne prepnutie stavov, finálny stav **Dostupné** a poslednú odozvu 89 ms.
-- Test vykonaný cez samostatný endpoint, bez nutnosti upraviť produkčný `health.php`, `latest.jpg`, Publisher alebo monitor #41. Doručenie oboch notifikácií Signal ešte treba potvrdiť osobitne (screenshot Uptime Kuma nepreukazuje doručenie).
+- Test vykonaný cez samostatný endpoint, bez nutnosti upraviť produkčný `health.php`, `latest.jpg`, Publisher alebo monitor #41. Doručenie oboch notifikácií Signal následne používateľ potvrdil (vlastné skúsenosti, nie zo screenshotu).
 - **Upratovanie:** po úspešnom teste zrušiť dočasný monitor a testovacie súbory, ak už nebudú potrebné; produkčný monitor #41 ponechať.
+
+**Záver M2/testu:** monitor #42 má overené UP → DOWN → RECOVERY a obe Signal notifikácie; monitor #41 zostáva produkčný. Odstránenie testovacích artefaktov zatiaľ nebolo potvrdené.
+
+### M3 – Uptime Kuma Push heartbeat Publishera (návrh implementácie 6. 11. 2026)
+
+**Stav:** zmena implementovaná v samostatnej vetve `feat/kuma-push-heartbeat-20261106`; **nie je nasadená na produkčný Linux Mint**. Zatiaľ nie je potvrdené spojenie zo vzdialeného IdeaPadu na Uptime Kuma v Synology cez ZeroTier.
+
+- Nový modul `arenti_heartbeat.py` odosiela voliteľný HTTP(s) GET na `/api/push/<token>` až po úspešnom `ftp_upload()` (potvrdený FTP rename). Volanie je preskočené v režime `--dry-run`.
+- Voliteľné nastavenia `[monitoring]` v lokálnom `arenti_config.ini` (práva 0600): `enabled`, `push_url`, `allow_private_http`, `timeout_seconds`. V repozitári iba neaktívny vzor s prázdnou URL; **skutočný token nezapisovať do GitHubu ani HELP.md**.
+- Predvolený stav: vypnuté, aby ostatné inštalácie fungovali bez zmeny. HTTPS alebo explicitne povolené HTTP len na privátnu IP (napr. cez ZeroTier), bez presmerovaní; logy nesmú obsahovať URL ani token.
+- Push dostáva `status=up`, `msg=FTPS upload OK`, `ping=<trvanie cyklu v ms>`. Ak FTP/RTSP zlyhá alebo systemd nevykoná Publisher, heartbeat nepríde. Chyba spojenia s Kumou **nezmení úspech FTPS cyklu na zlyhanie** (iba varovanie typu `HEARTBEAT FAIL`).
+- Pripravených 8 izolovaných unit testov modulu; lokálne prešli. **Produkčný end-to-end test Push ešte neprebehol.**
+- Navrhovaný nový Push monitor v Uptime Kuma: `HYBE – Arenti C3 – Publisher heartbeat`, očakávanie **420 s**, **1 opakovanie** s odstupom **60 s**, Signal DOWN/RECOVERY. Toto je samostatný monitor od HTTP checku produkčnej snímky #41.
+- **Pred nasadením:** vytvoriť Push monitor v Synology a overiť routovanie/súkromnú HTTP/HTTPS dostupnosť z IdeaPadu; bezpečne otestovať token lokálne bez jeho zobrazenia v termináli alebo chate. Potom prevziať schválený kód na Mint, vytvoriť zálohu produkčných súborov, `chmod 600` config, test jedného cyklu, výsledok `HEARTBEAT OK`; kontrola `UPLOAD OK` a `CYKLUS OK`.
+- **Rollback:** `enabled=no` alebo odstrániť sekciu `[monitoring]` a vrátiť predchádzajúcu verziu skriptu z vytvorenej zálohy. Systemd timer ostáva nezmenený.
 
 ## Známe obmedzenia
 
