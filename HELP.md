@@ -286,15 +286,16 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 
 ### M3 – Uptime Kuma Push heartbeat Publishera (návrh implementácie 6. 11. 2026)
 
-**Stav:** zmena implementovaná v samostatnej vetve `feat/kuma-push-heartbeat-20261106`; **nie je nasadená na produkčný Linux Mint**. Zatiaľ nie je potvrdené spojenie zo vzdialeného IdeaPadu na Uptime Kuma v Synology cez ZeroTier.
+**Stav:** zmena implementovaná v samostatnej vetve `feat/kuma-push-heartbeat-20261106` (draft PR #2); **nie je nasadená na produkčný Linux Mint**. Spojenie IdeaPad → Synology cez ZeroTier bolo potvrdené 6. 11. 2026, samotný Push token ani nový kód ešte neboli otestované na produkcii.
 
 - Nový modul `arenti_heartbeat.py` odosiela voliteľný HTTP(s) GET na `/api/push/<token>` až po úspešnom `ftp_upload()` (potvrdený FTP rename). Volanie je preskočené v režime `--dry-run`.
 - Voliteľné nastavenia `[monitoring]` v lokálnom `arenti_config.ini` (práva 0600): `enabled`, `push_url`, `allow_private_http`, `timeout_seconds`. V repozitári iba neaktívny vzor s prázdnou URL; **skutočný token nezapisovať do GitHubu ani HELP.md**.
-- Predvolený stav: vypnuté, aby ostatné inštalácie fungovali bez zmeny. HTTPS alebo explicitne povolené HTTP len na privátnu IP (napr. cez ZeroTier), bez presmerovaní; logy nesmú obsahovať URL ani token.
+- Predvolený stav: vypnuté, aby ostatné inštalácie fungovali bez zmeny. HTTPS alebo explicitne povolené HTTP len na privátnu IP (napr. cez ZeroTier), bez presmerovaní; logy nesmú obsahovať URL ani token. Pridané `host_header` pre Synology nginx virtual-host (napr. `monitoring:3001`) pri súkromnom HTTP; pripojenie smeruje na privátnu IP a prostredie HTTP proxy sa ignoruje.
 - Push dostáva `status=up`, `msg=FTPS upload OK`, `ping=<trvanie cyklu v ms>`. Ak FTP/RTSP zlyhá alebo systemd nevykoná Publisher, heartbeat nepríde. Chyba spojenia s Kumou **nezmení úspech FTPS cyklu na zlyhanie** (iba varovanie typu `HEARTBEAT FAIL`).
 - Pripravených 8 izolovaných unit testov modulu; lokálne prešli. **Produkčný end-to-end test Push ešte neprebehol.**
 - Navrhovaný nový Push monitor v Uptime Kuma: `HYBE – Arenti C3 – Publisher heartbeat`, očakávanie **420 s**, **1 opakovanie** s odstupom **60 s**, Signal DOWN/RECOVERY. Toto je samostatný monitor od HTTP checku produkčnej snímky #41.
-- **Pred nasadením:** vytvoriť Push monitor v Synology a overiť routovanie/súkromnú HTTP/HTTPS dostupnosť z IdeaPadu; bezpečne otestovať token lokálne bez jeho zobrazenia v termináli alebo chate. Potom prevziať schválený kód na Mint, vytvoriť zálohu produkčných súborov, `chmod 600` config, test jedného cyklu, výsledok `HEARTBEAT OK`; kontrola `UPLOAD OK` a `CYKLUS OK`.
+- **Overená sieť 6. 11. 2026:** IdeaPad ZeroTier `192.168.196.12/24`; `192.168.196.150:3001` aj `192.168.2.150:3001` cez IP bez Host vracajú nginx `404`. Prístup pomocou `--resolve monitoring:3001:<IP>` a URL `http://monitoring:3001/api/entry-page` cez obe IP vrátil **HTTP 200**, JSON `{"type":"entryPage","entryPage":"dashboard"}`. Preto Push musí odosielať `Host: monitoring:3001` aj pri spojení na privátnu IP `192.168.196.150`. Konkrétny Push token nikdy neukladať do logu/repozitára.
+- **Pred nasadením:** Push monitor už používateľ vytvoril v Synology (420 s, retries 1, retry delay 60 s; Signal dočasne vypnutý), treba potvrdiť smerovanie pomocou explicitného `Host` na IdeaPade, bezpečne otestovať Push token bez jeho zobrazenia v termináli alebo chate. Potom prevziať schválený kód na Mint, vytvoriť zálohu produkčných súborov, `chmod 600` config, test jedného cyklu, výsledok `HEARTBEAT OK`; kontrola `UPLOAD OK` a `CYKLUS OK`.
 - **Rollback:** `enabled=no` alebo odstrániť sekciu `[monitoring]` a vrátiť predchádzajúcu verziu skriptu z vytvorenej zálohy. Systemd timer ostáva nezmenený.
 
 ## Známe obmedzenia
