@@ -16,6 +16,7 @@
 - **systemd user timer**: pevný 5-minútový kalendárny harmonogram pre Hybe (`:04, :09, :14, :19, ...`) bez postupného časového posunu. Starý režim od ukončenia služby je dostupný voliteľne.
 - **Logovanie**: systemd journal a rotujúci log súbor.
 - **Voliteľný externý dohľad cez Make.com**: samostatná kontrola HTTP `Last-Modified` a e-mail pri výpadku/obnovení (konfigurácia v `docs/MAKE_MONITOR.md`).
+- **Voliteľný Uptime Kuma Push heartbeat**: až po úspešnom FTPS nahratí; bez heartbeatu pri chybe/`--dry-run`, bez blokovania publikovania pri výpadku monitoringu. Prístup cez súkromný ZeroTier alebo HTTPS.
 
 ## Ako to funguje
 
@@ -27,6 +28,28 @@ Arenti C3 --ONVIF--> RTSP URI --FFmpeg + delogo--> JPEG --kontrola kvality--> FT
                                     Make.com HEAD Last-Modified
                                          >15 min -> upozornenie
 ```
+
+## Voliteľný heartbeat – Uptime Kuma Push
+
+Na Synology vytvor **Push** monitor a nastav očakávaný interval približne **420 sekúnd** (5-minútový Publisher + rezerva), **1 opakovanie** s intervalom **60 sekúnd**. Zapni existujúce Signal oznámenie. Monitor poskytne unikátnu URL s tokenom – **token nepísať do ticketov, screenshotov ani GitHubu**.
+
+Na Linux Mint musí byť adresa dostupná z notebooku. Preferované je HTTPS s platným TLS alebo `http://<súkromná-ZeroTier-IP-NAS>:3001` cez funkčnú a súkromnú ZeroTier sieť. **Neotváraj port 3001 verejne len kvôli heartbeat monitoringu.** V prípade HTTP sa vyžaduje privátna IP a explicitné `allow_private_http=yes`.
+
+Do súkromného lokálneho súboru `arenti_config.ini` (práva `chmod 600`) doplň:
+
+```ini
+[monitoring]
+enabled = yes
+push_url = https://PRIVATE-MONITOR.example/api/push/REPLACE_WITH_PRIVATE_TOKEN
+allow_private_http = no
+timeout_seconds = 3
+```
+
+Ak používaš ZeroTier privátnu IP cez HTTP, nastav `allow_private_http = yes` a použi `http://<privátna IP>:3001/api/push/...`. **Príklad obsahuje zástupný token, nikdy skutočný.**
+
+Heartbeat sa odošle **iba po úspešnom vzdialenom FTPS rename**. Uptime Kuma dostane `status=up`, správu `FTPS upload OK` a dĺžku cyklu (`ping` v ms). Ak sa Publisher nevyvolá, snímka zlyhá alebo FTP zlyhá, heartbeat sa neposiela; Kuma po tolerancii prejde do DOWN. Ak je monitoring nedostupný, Publisher zapíše `HEARTBEAT FAIL: <typ chyby>`, ale cyklus zostane úspešný. Monitorovacia URL sa nikdy nevypisuje do logu. Presmerovania HTTP sú zakázané, aby token neunikol na iný host.
+
+Táto funkcia je **v predvolenej konfigurácii vypnutá**. Po nasadení over `UPLOAD OK`, `HEARTBEAT OK` a `CYKLUS OK` v systemd journale. Testy bežia bez skutočnej siete alebo tokenu: `python3 -m unittest discover -s tests -p 'test_heartbeat.py' -v`.
 
 ## Rýchla inštalácia (Debian / Ubuntu / Linux Mint)
 
