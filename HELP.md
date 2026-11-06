@@ -252,9 +252,23 @@ Návrat k pôvodnému správaniu veka len pri výslovnom rozhodnutí správcu: o
 - PowerShell `curl.exe -i https://hybe.lovcimrazov.sk/camera/health.php`: **HTTP/1.1 200 OK**, `Content-Type: application/json`; `checked_at=19:25:57`, `age_seconds=91`, rovnaký `last_modified_at`, správne no-cache hlavičky.
 - Lokálne testy endpointu pred nasadením: platná/stará/poškodená/chýbajúca snímka (4/4 PASS podľa testov implementácie). **Produkčný test HTTP 503 simuláciou výpadku ešte neprebehol**.
 
-**M2 – Uptime Kuma (6. 11. 2026):** Na Synology vytvorený monitor **#41 – HYBE – Arenti C3 – Aktualnost snimky** (typ `HTTP(s)`, `GET`, URL vyššie, interval 60 s, 2 opakovania, interval opakovania 30 s, timeout 10 s, akceptované kódy 200–299). Screenshot detailu potvrdzuje **Dostupné / UP**, `200 – OK`, aktuálnu odozvu 111 ms a 100 % dostupnosť od vytvorenia. Pri vytvorení bolo Signal oznámenie zapnuté a e-mailové vypnuté; doručenie Signal notifikácie ešte nebolo potvrdené. Samotný stav UP **nepreukazuje** správnu reakciu na 503 ani doručenie upozornenia.
+**M2 – Uptime Kuma (6. 11. 2026):** Na Synology vytvorený monitor **#41 – HYBE – Arenti C3 – Aktualnost snimky** (typ `HTTP(s)`, `GET`, URL vyššie, interval 60 s, 2 opakovania, interval opakovania 30 s, timeout 10 s, akceptované kódy 200–299). Screenshot detailu potvrdzuje **Dostupné / UP**, `200 – OK`, aktuálnu odozvu 111 ms a 100 % dostupnosť od vytvorenia. Pri vytvorení bolo Signal oznámenie zapnuté a e-mailové vypnuté. Dňa 6. 11. bolo Signal REST API na Synology opravené a skúšobné odoslanie prešlo (HTTP 201 na `/v2/send`, používateľ potvrdil úspech). Stav UP a úspešný test oznámenia **zatiaľ nepreukazujú** správny prechod celého monitoru pri HTTP 503 (DOWN → RECOVERY).
 
-**Nasledujúce testy:** (1) odoslať skúšobné Signal oznámenie cez správu notifikácií Kuma; (2) vytvoriť oddelený testovací endpoint/monitor a otestovať prechod DOWN → RECOVERY bez zásahu do produkčného `latest.jpg`, produkčného `health.php` alebo Publishera. Prípadné upozornenia testov označiť ako testovacie.
+**Nasledujúci test:** vytvoriť oddelený testovací endpoint/monitor a otestovať prechod DOWN → RECOVERY a príslušné Signal upozornenia bez zásahu do produkčného `latest.jpg`, produkčného `health.php` alebo Publishera. Testovacie upozornenia jednoznačne označiť.
+
+### Obnova Signal notifikácií na Synology – 6. 11. 2026
+
+Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+, ktorý slúži ako notifikačný kanál Uptime Kuma.
+
+- Projekt: `signal-api`, Compose služba `signal-cli-rest-api`, konfigurácia `/volume1/docker/signal-api/compose.yaml`.
+- Dátový bind mount: `/volume1/docker/signal-api/signal-api-config` → `/home/.local/share/signal-cli`; údaje Signal účtu a kľúče nezverejňovať.
+- Docker image: `bbernhard/signal-cli-rest-api:latest`; port `9922:8080`.
+- Incident: existujúci kontajner mal starý `Entrypoint=["/entrypoint.sh"]`, zatiaľ čo používaný image mal `Entrypoint=["/init"]`. Projektový `compose.yaml` vlastný `entrypoint` neobsahoval. Prvé viditeľné neúspešné spustenie po predchádzajúcej prevádzke nastalo 31. 10. 2026.
+- Pred opravou bola vytvorená záloha `/volume1/docker/signal-api/backup-20261106-201226` obsahujúca Compose a Signal konfiguráciu.
+- Oprava: `docker compose -p signal-api -f /volume1/docker/signal-api/compose.yaml up -d --no-deps --force-recreate --pull never signal-cli-rest-api`; bez výmeny image a bez vymazania bind mountu.
+- Následné testy: `Status=running`, `Health=healthy`, `Entrypoint=["/init"]`, `GET /v1/about → HTTP 200`, `GET /v1/accounts → 1 registrovaný účet`, `POST /v2/send → HTTP 201`; používateľ potvrdil úspešný skúšobný test.
+- Logy obsahujú neblokujúce upozornenie na `/run` mount, no služby Signal API a JSON-RPC úspešne štartujú.
+- **Zostáva:** izolovaný test prechodu Uptime Kuma monitoru DOWN → RECOVERY a doručenia oboch upozornení. Starý image `<none>` zatiaľ nemažme, kým nebude stabilita dlhšie overená.
 
 ## Známe obmedzenia
 
