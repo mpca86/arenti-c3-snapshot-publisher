@@ -235,7 +235,7 @@ Návrat k pôvodnému správaniu veka len pri výslovnom rozhodnutí správcu: o
 
 ## M1 – externý monitoring aktuálnosti snímky (6. 11. 2026)
 
-**Stav: produkčný test PASS, M2 (Uptime Kuma) zatiaľ nenastavená.**
+**Stav: M1 produkčný test PASS; M2 monitor Uptime Kuma aktívny (UP). Test notifikačného kanála a kontrolovaný DOWN → RECOVERY ešte otvorené.**
 
 - Implementácia: `/hybe/public/camera/health.php` na HostCreators, vedľa `latest.jpg`.
 - Verejná URL: `https://hybe.lovcimrazov.sk/camera/health.php`.
@@ -252,7 +252,9 @@ Návrat k pôvodnému správaniu veka len pri výslovnom rozhodnutí správcu: o
 - PowerShell `curl.exe -i https://hybe.lovcimrazov.sk/camera/health.php`: **HTTP/1.1 200 OK**, `Content-Type: application/json`; `checked_at=19:25:57`, `age_seconds=91`, rovnaký `last_modified_at`, správne no-cache hlavičky.
 - Lokálne testy endpointu pred nasadením: platná/stará/poškodená/chýbajúca snímka (4/4 PASS podľa testov implementácie). **Produkčný test HTTP 503 simuláciou výpadku ešte neprebehol**.
 
-**Nasledujúca etapa M2:** Na Synology Uptime Kuma vytvoriť monitor typu `HTTP(s)` pre health URL. Odporúčané `GET`, interval 60 s, retry 2, retry interval 30 s, akceptované kódy `200-299`; `503` znamená DOWN. Notifikácie a kontrolovanú simuláciu stale zapínať až po overení prvých heartbeatov. Bežné publikovanie ani produkčnú fotografiu pri testovaní neničiť.
+**M2 – Uptime Kuma (6. 11. 2026):** Na Synology vytvorený monitor **#41 – HYBE – Arenti C3 – Aktualnost snimky** (typ `HTTP(s)`, `GET`, URL vyššie, interval 60 s, 2 opakovania, interval opakovania 30 s, timeout 10 s, akceptované kódy 200–299). Screenshot detailu potvrdzuje **Dostupné / UP**, `200 – OK`, aktuálnu odozvu 111 ms a 100 % dostupnosť od vytvorenia. Pri vytvorení bolo Signal oznámenie zapnuté a e-mailové vypnuté; doručenie Signal notifikácie ešte nebolo potvrdené. Samotný stav UP **nepreukazuje** správnu reakciu na 503 ani doručenie upozornenia.
+
+**Nasledujúce testy:** (1) odoslať skúšobné Signal oznámenie cez správu notifikácií Kuma; (2) vytvoriť oddelený testovací endpoint/monitor a otestovať prechod DOWN → RECOVERY bez zásahu do produkčného `latest.jpg`, produkčného `health.php` alebo Publishera. Prípadné upozornenia testov označiť ako testovacie.
 
 ## Známe obmedzenia
 
