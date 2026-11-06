@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape
 
 from PIL import Image, ImageStat, UnidentifiedImageError
 from arenti_onvif import soap_request, children_named, first_text
+from arenti_heartbeat import send_success_heartbeat
 
 BASE = Path(__file__).resolve().parent
 LOG = logging.getLogger('arenti')
@@ -288,6 +289,10 @@ def run(args):
             latest = storage / 'latest.jpg'
             os.replace(staging, latest)
             ftp_upload(c, latest, args.dry_run)
+            # Kuma Push is best-effort and must confirm only completed FTPS uploads.
+            # Never send heartbeat during --dry-run or after a failed upload.
+            if not args.dry_run:
+                send_success_heartbeat(c, time.monotonic() - start, LOG)
             LOG.info('CYKLUS OK: %.1f s', time.monotonic() - start)
             return 0
         except Exception as e:
