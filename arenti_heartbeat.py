@@ -5,8 +5,9 @@ Never log the secret push URL or exception messages that may contain it.
 import ipaddress
 import json
 import logging
+import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -52,17 +53,27 @@ def send_success_heartbeat(config, elapsed_seconds, logger=None):
                 raise ValueError('HTTP requires a private IP address')
         if parts.fragment:
             raise ValueError('unexpected URL fragment')
+        # Synology nginx can route only for Host: monitoring:3001, even when
+        # addressed by a private ZeroTier IP. Never accept CRLF/header injection.
+        host_header = mon.get('host_header', '').strip()
+        if host_header:
+            if parts.scheme != 'http' or not re.fullmatch(
+                    r'[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?', host_header):
+                raise ValueError('invalid private HTTP Host header')
         # Preserve any Kuma-generated query, but override status parameters.
         query = dict(parse_qsl(parts.query, keep_blank_values=True))
         query.update(status='up', msg='FTPS upload OK',
                      ping=str(max(0, round(elapsed_seconds * 1000))))
         url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ''))
-        request = Request(url, headers={
+        headers = {
             'User-Agent': 'arenti-publisher/heartbeat',
             'Cache-Control': 'no-store',
-        })
-        # Never forward push token via HTTP redirect.
-        opener = build_opener(_NoRedirect())
+        }
+        if host_header:
+            headers['Host'] = host_header
+        request = Request(url, headers=headers)
+        # Direct to ZeroTier IP; do not use environment proxies or redirects.
+        opener = build_opener(ProxyHandler({}), _NoRedirect())
         with opener.open(request, timeout=timeout) as response:
             if response.status != 200:
                 raise ValueError('non-200 from push API')
