@@ -324,6 +324,22 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 - **Jednotkové testy na IdeaPade:** 12 heartbeat + 8 timer = **20/20 PASS** (0,039 s), izolované v dočasnom priečinku, bez reálnych HTTP Push či FTP volaní. Hlásenia `HEARTBEAT FAIL` pri testoch neplatných parametrov sú očakávané, nie produkčné výpadky.
 - Inštalátor sa **nespúšťal**; neprepísal aktívne user systemd jednotky a Publisher sa nereštartoval. Funkcia `timer_schedule()` sa teraz nachádza aj v lokálnej kópii. Pri budúcich zmenách nevyvolávať `install_timer.py` bez samostatného schválenia: prepíše systemd jednotky.
 
+### M4.4d–M4.4e – Finálna kontrola súladu a RTC watchdog (7. 11. 2026)
+
+**M4.4d: PASS** – na IdeaPade boli porovnané lokálne súbory s presnými Git blob SHA v GitHub feature vetve. Výsledok: **3/3 PASS**: `arenti_publisher.py` (`8684866940ed56f0d83e6dc17438b1f84fd9559c`), `arenti_heartbeat.py` (`8297f94d6f8a5ea6863312630e2bdf2066e826e8`) a `install_timer.py` (`bc634a53008f4e5b34bdda4ee2c041fa57538fad`). Používateľský timer `arenti-publisher.timer` bol `active`. Kontrola `arenti-rtc-wakeup.timer` cez `systemctl --user` v tomto kroku chybne vrátila `inactive`, pretože RTC timer patrí do **system** scope.
+
+**M4.4e: PASS** – opakovaná kontrola RTC timeru správnym systémovým `systemctl` (bez `--user`) potvrdila:
+
+- `arenti-rtc-wakeup.timer`: **active**, **enabled**, `LoadState=loaded`;
+- Unit: `/etc/systemd/system/arenti-rtc-wakeup.timer`;
+- `OnCalendar=*-*-* *:00/10:00` (každých 10 minút), `WakeSystem=true`, `AccuracySec=1s`;
+- Na screenshote z približne 10:52 CET: predchádzajúci plánovaný beh o 10:50 CET, nasledujúci o 11:00 CET;
+- `journalctl -u arenti-rtc-wakeup.service`: periodické spustenia, úspešné dokončenie `Deactivated successfully` / `Finished` a hlásenie `RTC_WAKE_TIMER_TICK`.
+
+**Limit dôkazu:** aktívny systémový timer a úspešné tick-y **nepreukazujú fyzické prebudenie zo suspendu**; na to treba osobitný kontrolovaný test s prístupom na zariadenie alebo nezávislé zaznamenanie prebudenia. Žiadna produkčná služba nebola pri M4.4d/e zmenená či reštartovaná.
+
+**Záver M4 synchronizácie:** zdrojové súbory 3/3 PASS, jednotkové testy M4.4c 20/20 PASS, regresný audit M4.2 pôvodne 22 PASS / 2 WARN / 0 FAIL, nesúlad inštalátora uzavretý a RTC timer overený. **Zostáva známy otvorený problém s občasným `TimeoutError` HTTP heartbeatu**; úspešné FTPS cykly tým nie sú blokované. Pred označením PR #2 za pripravený na merge overiť aktuálny stav produkčných notifikácií (Push monitor #43) a rozhodnúť, či akceptovať otvorenú chybu ako zdokumentované obmedzenie. Projektové testy nepotvrdili odstránenie tejto chyby.
+
 ### Zálohy a release rozhodnutie
 
 - Konfigurácia pred zmenou timeoutu: `/home/mpca86/arenti-publisher/arenti_config.ini.bak-20261106-235310`; pôvodný heartbeat modul pred diagnostickým patchom: `/home/mpca86/arenti-publisher/arenti_heartbeat.py.bak-m4-20261107-002430`. Zálohy obsahujú súkromné dáta; **nepridávať do GitHubu**.
