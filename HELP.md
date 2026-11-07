@@ -298,6 +298,36 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 - **Pred nasadením:** Push monitor už používateľ vytvoril v Synology (420 s, retries 1, retry delay 60 s; Signal dočasne vypnutý), treba potvrdiť smerovanie pomocou explicitného `Host` na IdeaPade, bezpečne otestovať Push token bez jeho zobrazenia v termináli alebo chate. Potom prevziať schválený kód na Mint, vytvoriť zálohu produkčných súborov, `chmod 600` config, test jedného cyklu, výsledok `HEARTBEAT OK`; kontrola `UPLOAD OK` a `CYKLUS OK`.
 - **Rollback:** `enabled=no` alebo odstrániť sekciu `[monitoring]` a vrátiť predchádzajúcu verziu skriptu z vytvorenej zálohy. Systemd timer ostáva nezmenený.
 
+## M4 – Regresný audit produkcie (7. 11. 2026)
+
+**Stav:** M4.2 regresný audit v2 **22 PASS / 2 WARN / 0 FAIL** na produkčnom notebooku `mpca86@ideapad` (7. 11. 2026, približne 01:41 CET). Ide o **PASS s otvorenými upozorneniami**, nie o bezchybný monitoring. Diagnostický skript `/home/mpca86/arenti_m4_2_regression_readonly_v2.py` bežal iba na čítanie. Údaje pochádzajú z lokálneho testovacieho výstupu; GitHub PR #2 ešte nebol zosúladený s lokálnou produkciou.
+
+### Produkčné komponenty a overené testy
+
+- **systemd user timer:** `active`, `enabled`, plán `OnCalendar=*-*-* *:04/5:00`, `AccuracySec=1s`, `RandomizedDelaySec=0`; service typu `oneshot` je po cykle `inactive` (očakávané). **RTC watchdog timer:** `active`. Test neprináša dôkaz o úspešnom fyzickom prebudení zo suspendu.
+- **Zdrojový kód a konfigurácia:** Python syntax troch lokálnych modulov `arenti_publisher.py`, `arenti_heartbeat.py`, `install_timer.py` PASS; FFmpeg filter `delogo` nájdený v kóde; `ffmpeg` a `curl` dostupné. Citlivá konfigurácia má práva `0600`. Monitoring aktívny, súkromná HTTP cesta a `Host` overené, `timeout_seconds=8`.
+- **Lokálna snímka:** formát JPEG, 2560×1440, jasový rozptyl `luma_stddev=9.7`, veľkosť približne 70,5 kB, vek v okamihu auditu 129 s. **Verejná snímka:** HTTP 200, `image/jpeg`. **HostCreators `health.php`:** HTTP 200, `status=ok`, vek 128 s, 2560×1440.
+- **Posledné dve hodiny pri audite:** `KVALITA OK=24`, `UPLOAD OK=24`, `CYKLUS OK=24`, `CYKLUS FAIL=0`; interval úspešných cyklov 26,6 až 34,9 s. FTPS publikovanie **24/24 PASS**, bez zlyhaných cyklov.
+- **Uptime Kuma REST API:** HTTP 200; lokálne izolované heartbeat mock testy PASS bez skutočného Push. Vytvorený Push monitor `HYBE – Arenti C3 – Publisher heartbeat` (ID 43). Kuma na Synology aktualizovaná na **2.5.9**; monitor nastavený na pulz **420 s**, **1 opakovanie** v intervale **60 s**, opakované oznamovanie **0**. Stav zapnutia produkčných Signal/e-mail oznámení ešte pred uzavretím release znovu overiť.
+- **HTTP DOWN/RECOVERY a Signal:** predchádzajúci test izolovaného monitora #42 s HTTP 200 → 503 → 200 a potvrdeným prijatím oboch správ Signal je PASS; nepreukazuje automaticky notifikácie produkčného Push monitora #43.
+
+### WARN 1 – Prerušované HTTP timeouty pri heartbeate (otvorené)
+
+- V dvojhodinovom audite **18× `HEARTBEAT OK`, 6× `HEARTBEAT FAIL: TimeoutError`**; cyklus i FTPS aj pri týchto varovaniach zostali úspešné. Zlyhania sa nesmú považovať automaticky za stratené Push dáta.
+- Lokálny diagnostický patch M4.1b zaznamenáva `headers_ms`, `body_ms`, `total_ms`, `phase`, `elapsed_ms` bez Push tokenu. Príklad 7. 11. o 00:34:34,851 CET: `TimeoutError phase=headers elapsed_ms=8055` po úspešnom FTPS. Databáza Kuma zaznamenala o 00:34:43,090 CET (23:34:43,090 UTC) `status=1`, `msg=FTPS upload OK`, `ping=26357`; nejde o potvrdenú dobu sieťovej odozvy, ale o klientom dodané trvanie Publishera.
+- Ručné testy mali rýchlu odozvu (20/20 bežných GET cez ZeroTier a 5/5 paralelných GET). Zatiaľ **nie je preukázané**, či oneskorenie vzniká na klientskej sieťovej trase, nginx alebo pri vybavovaní Push endpointu. Nezvyšovať timeout naslepo a nezapínať automatické retry bez testu duplicít. Heartbeat zostáva best-effort a nesmie blokovať FTP cyklus.
+
+### WARN 2 – Lokálny inštalátor timera sa líši od GitHubu (otvorené)
+
+- Na produkčnom IdeaPade lokálny `install_timer.py` neobsahuje `timer_schedule()`, preto izolovaný unit smoke test jeho generovania neprebehol (WARN, **nie** zlyhanie aktívneho timera). V aktuálnej vetve `feat/kuma-push-heartbeat-20261106` GitHub `install_timer.py` túto funkciu obsahuje aj s testami `tests/test_timer_schedule.py`.
+- **Nenahrádzať automaticky produkčný inštalátor a nespúšťať `install_timer.py` bez porovnania a zálohy**: inštalátor zapisuje systemd unit súbory. Prevádzkové jednotky sú už v správnom stave; rozdiel odstrániť neskôr kontrolovanou synchronizáciou zdroja.
+
+### Zálohy a release rozhodnutie
+
+- Konfigurácia pred zmenou timeoutu: `/home/mpca86/arenti-publisher/arenti_config.ini.bak-20261106-235310`; pôvodný heartbeat modul pred diagnostickým patchom: `/home/mpca86/arenti-publisher/arenti_heartbeat.py.bak-m4-20261107-002430`. Zálohy obsahujú súkromné dáta; **nepridávať do GitHubu**.
+- Výsledok M4.2: **akceptované regresné testy s dvoma WARN**. Zostáva M4.3 finálne zosúladenie dokumentácie a lokálneho kódu s GitHubom, M4.4 izolované testy finálnej vetvy a rozhodnutie o PR #2. **PR #2 ponechať ako draft, nezlučovať do `main`**, kým nebude aktualizovaný diagnostický modul a vysvetlený/sledovaný otvorený problém.
+- Presné Push URL/token, RTSP/FTP heslá a ďalšie tajomstvá sa do `HELP.md`, logov ani repozitára nesmú zapisovať.
+
 ## Známe obmedzenia
 
 - Závisí od dostupnosti notebooku, siete, kamery a hostingu.
