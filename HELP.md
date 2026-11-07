@@ -346,6 +346,15 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 - Výsledok historického auditu M4.2: **22 PASS / 2 WARN / 0 FAIL**. Po M4.4c je **WARN 2 uzavretý**: produkčný heartbeat bol byte-identicky zosúladený s GitHubom, `install_timer.py` synchronizovaný a **20/20 izolovaných testov PASS**. **Zostáva otvorený WARN 1:** občasné klientske `TimeoutError` pri heartbeate. Ide o best-effort upozornenie, ktoré nemení úspešnosť publikovania. Po synchronizácii odporúčaný finálny read-only smoke test aktívneho timeru, kontrola stavu upozornení Signal/e-mail na monitore #43 a kontrola, že lokálne súbory zostali zhodné. **Release rozhodnutie (7. 11. 2026):** Po M4.4d/e a 20/20 izolovaných testoch je regresná a zdrojová synchronizácia ukončená; známy timeout je evidovaný v [GitHub issue #3](https://github.com/mpca86/arenti-c3-snapshot-publisher/issues/3) a prijatý ako neblokujúce obmedzenie **best-effort monitoringu**, nie ako vyriešená chyba. PR #2 možno zlúčiť do `main`; verifikácia nastavenia notifikácií na monitore #43 a fyzického wake zo suspendu zostáva mimo rozsahu potvrdených testov.**
 - Presné Push URL/token, RTSP/FTP heslá a ďalšie tajomstvá sa do `HELP.md`, logov ani repozitára nesmú zapisovať.
 
+### M4.5 – GitHub PR #2 merge (7. 11. 2026)
+
+**STAV: ZLÚČENÉ DO `main`.** Pull Request [#2](https://github.com/mpca86/arenti-c3-snapshot-publisher/pull/2) bol označený ako Ready for review a úspešne zlúčený metódou **squash**. Merge commit: `e225a8d34cb0cc4602d835a1009d3df7a50f7a62`. GitHub potvrdil stav `closed / merged=true`. Na `main` následne overený heartbeat modul s produkčným blob SHA `8297f94d6f8a5ea6863312630e2bdf2066e826e8` a súbor `tests/test_heartbeat.py` s 12 testami.
+
+- **Overenie pred merge:** 3/3 produkčné Python súbory zhodné, 20/20 izolovaných heartbeat/timer testov PASS, RTC systemd timer active/enabled, M4.2 audit 22 PASS / 2 WARN / 0 FAIL s odstráneným WARN o inštalátore. Automatická CI kontrola sa nevyhodnotila (nebola nastavená).
+- **Akceptovaná výnimka:** prerušované `TimeoutError` klientskych potvrdení Push, bez blokovania FTPS, sledované v [issue #3](https://github.com/mpca86/arenti-c3-snapshot-publisher/issues/3). **Neoznačovať za opravené.**
+- **Neoverené samostatne:** fyzické prebudenie IdeaPadu zo suspendu a aktuálne zapnutie Signal/e-mail upozornení pre produkčný Push monitor #43.
+- Merge zmenil iba obsah GitHub vetvy `main`; **na IdeaPade sa pri merge nič nenasadzovalo ani nereštartovalo**. Produkčný kód bol s mergovaným zdrojom zosúladený už pred zlúčením.
+
 ## Známe obmedzenia
 
 - Závisí od dostupnosti notebooku, siete, kamery a hostingu.
