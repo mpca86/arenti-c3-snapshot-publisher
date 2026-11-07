@@ -104,6 +104,41 @@ class HeartbeatTests(unittest.TestCase):
             self.assertFalse(send_success_heartbeat(cfg(
                 'https://example.test/not-a-push/SECRET'), 10.0, self.log))
 
+    def test_timing_log_without_secrets(self):
+        with patch('arenti_heartbeat.build_opener') as op:
+            op.return_value.open.return_value = FakeResponse()
+            stream = io.StringIO()
+            handler = logging.StreamHandler(stream)
+            self.log.addHandler(handler)
+            previous = self.log.level
+            self.log.setLevel(logging.INFO)
+            try:
+                self.assertTrue(send_success_heartbeat(cfg(), 10.0, self.log))
+                value = stream.getvalue()
+                self.assertIn('headers_ms=', value)
+                self.assertIn('body_ms=', value)
+                self.assertIn('total_ms=', value)
+                self.assertNotIn('SECRET', value)
+            finally:
+                self.log.setLevel(previous)
+                self.log.removeHandler(handler)
+
+    def test_timeout_phase_headers_without_secrets(self):
+        with patch('arenti_heartbeat.build_opener') as op:
+            op.return_value.open.side_effect = TimeoutError(
+                'https://example.test/api/push/SECRET')
+            stream = io.StringIO()
+            handler = logging.StreamHandler(stream)
+            self.log.addHandler(handler)
+            try:
+                self.assertFalse(send_success_heartbeat(cfg(), 10.0, self.log))
+                value = stream.getvalue()
+                self.assertIn('phase=headers', value)
+                self.assertIn('elapsed_ms=', value)
+                self.assertNotIn('SECRET', value)
+            finally:
+                self.log.removeHandler(handler)
+
     def test_redirect_is_forbidden(self):
         self.assertIsNone(_NoRedirect().redirect_request(
             None, None, 302, 'Found', {}, 'https://evil.invalid'))
