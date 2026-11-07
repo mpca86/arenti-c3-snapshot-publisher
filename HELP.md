@@ -300,7 +300,7 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 
 ## M4 – Regresný audit produkcie (7. 11. 2026)
 
-**Stav:** M4.2 regresný audit v2 **22 PASS / 2 WARN / 0 FAIL** na produkčnom notebooku `mpca86@ideapad` (7. 11. 2026, približne 01:41 CET). Ide o **PASS s otvorenými upozorneniami**, nie o bezchybný monitoring. Diagnostický skript `/home/mpca86/arenti_m4_2_regression_readonly_v2.py` bežal iba na čítanie. Údaje pochádzajú z lokálneho testovacieho výstupu; GitHub PR #2 ešte nebol zosúladený s lokálnou produkciou.
+**Stav:** M4.2 regresný audit v2 **22 PASS / 2 WARN / 0 FAIL** na produkčnom notebooku `mpca86@ideapad` (7. 11. 2026, približne 01:41 CET). Ide o **PASS s otvorenými upozorneniami**, nie o bezchybný monitoring. Diagnostický skript `/home/mpca86/arenti_m4_2_regression_readonly_v2.py` bežal iba na čítanie. Údaje pochádzajú z lokálneho testovacieho výstupu. Následná synchronizácia kódu s vetvou PR #2 je zaznamenaná nižšie v M4.4c; auditu M4.2 spätne nemeníme počet WARN.
 
 ### Produkčné komponenty a overené testy
 
@@ -317,15 +317,17 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 - Lokálny diagnostický patch M4.1b zaznamenáva `headers_ms`, `body_ms`, `total_ms`, `phase`, `elapsed_ms` bez Push tokenu. Príklad 7. 11. o 00:34:34,851 CET: `TimeoutError phase=headers elapsed_ms=8055` po úspešnom FTPS. Databáza Kuma zaznamenala o 00:34:43,090 CET (23:34:43,090 UTC) `status=1`, `msg=FTPS upload OK`, `ping=26357`; nejde o potvrdenú dobu sieťovej odozvy, ale o klientom dodané trvanie Publishera.
 - Ručné testy mali rýchlu odozvu (20/20 bežných GET cez ZeroTier a 5/5 paralelných GET). Zatiaľ **nie je preukázané**, či oneskorenie vzniká na klientskej sieťovej trase, nginx alebo pri vybavovaní Push endpointu. Nezvyšovať timeout naslepo a nezapínať automatické retry bez testu duplicít. Heartbeat zostáva best-effort a nesmie blokovať FTP cyklus.
 
-### WARN 2 – Lokálny inštalátor timera sa líši od GitHubu (otvorené)
+### WARN 2 – Nesúlad lokálneho inštalátora timera (vyriešené v M4.4c)
 
-- Na produkčnom IdeaPade lokálny `install_timer.py` neobsahuje `timer_schedule()`, preto izolovaný unit smoke test jeho generovania neprebehol (WARN, **nie** zlyhanie aktívneho timera). V aktuálnej vetve `feat/kuma-push-heartbeat-20261106` GitHub `install_timer.py` túto funkciu obsahuje aj s testami `tests/test_timer_schedule.py`.
-- **Nenahrádzať automaticky produkčný inštalátor a nespúšťať `install_timer.py` bez porovnania a zálohy**: inštalátor zapisuje systemd unit súbory. Prevádzkové jednotky sú už v správnom stave; rozdiel odstrániť neskôr kontrolovanou synchronizáciou zdroja.
+- V pôvodnom M4.2 audite (01:41 CET) lokálny `install_timer.py` nemal `timer_schedule()`, preto bol správne hlásený WARN; **tento historický výsledok 22 PASS / 2 WARN / 0 FAIL nemeníme spätne**.
+- **7. 11. 2026 približne 10:47 CET:** IdeaPad stiahol GitHub `install_timer.py` z overenej revízie `06c81482978550f3f815a4da8bdbcf79d7c49948`; SHA Git blob `bc634a53008f4e5b34bdda4ee2c041fa57538fad` bol pred uložením aj po ňom skontrolovaný. Záloha starého lokálneho súboru: `/home/mpca86/arenti-publisher/install_timer.py.bak-m44-20261107-104739`.
+- **Jednotkové testy na IdeaPade:** 12 heartbeat + 8 timer = **20/20 PASS** (0,039 s), izolované v dočasnom priečinku, bez reálnych HTTP Push či FTP volaní. Hlásenia `HEARTBEAT FAIL` pri testoch neplatných parametrov sú očakávané, nie produkčné výpadky.
+- Inštalátor sa **nespúšťal**; neprepísal aktívne user systemd jednotky a Publisher sa nereštartoval. Funkcia `timer_schedule()` sa teraz nachádza aj v lokálnej kópii. Pri budúcich zmenách nevyvolávať `install_timer.py` bez samostatného schválenia: prepíše systemd jednotky.
 
 ### Zálohy a release rozhodnutie
 
 - Konfigurácia pred zmenou timeoutu: `/home/mpca86/arenti-publisher/arenti_config.ini.bak-20261106-235310`; pôvodný heartbeat modul pred diagnostickým patchom: `/home/mpca86/arenti-publisher/arenti_heartbeat.py.bak-m4-20261107-002430`. Zálohy obsahujú súkromné dáta; **nepridávať do GitHubu**.
-- Výsledok M4.2: **akceptované regresné testy s dvoma WARN**. Dokumentácia M4.3 bola aktualizovaná a produkčný `arenti_heartbeat.py` synchronizovaný s GitHubom v M4.4. Zostáva bezpečne zosúladiť lokálny `install_timer.py` bez spustenia inštalátora, spustiť testy finálnej vetvy na IdeaPade a rozhodnúť o PR #2. **PR #2 ponechať ako draft, nezlučovať do `main`**, kým nebude aktualizovaný diagnostický modul a vysvetlený/sledovaný otvorený problém.
+- Výsledok historického auditu M4.2: **22 PASS / 2 WARN / 0 FAIL**. Po M4.4c je **WARN 2 uzavretý**: produkčný heartbeat bol byte-identicky zosúladený s GitHubom, `install_timer.py` synchronizovaný a **20/20 izolovaných testov PASS**. **Zostáva otvorený WARN 1:** občasné klientske `TimeoutError` pri heartbeate. Ide o best-effort upozornenie, ktoré nemení úspešnosť publikovania. Po synchronizácii odporúčaný finálny read-only smoke test aktívneho timeru, kontrola stavu upozornení Signal/e-mail na monitore #43 a kontrola, že lokálne súbory zostali zhodné. **PR #2 ponechať ako draft a nezlučovať do `main` bez rozhodnutia o otvorenom probléme a finálnej kontroly.**
 - Presné Push URL/token, RTSP/FTP heslá a ďalšie tajomstvá sa do `HELP.md`, logov ani repozitára nesmú zapisovať.
 
 ## Známe obmedzenia
