@@ -272,15 +272,79 @@ Signal REST API poskytuje samostatný Docker Compose projekt na Synology DS220+,
 
 ### M3 – izolovaný test Uptime Kuma DOWN → RECOVERY (6. 11. 2026)
 
-**Stav: PASS pre HTTP monitorovanie (200 → 503 → 200).** `health-test.php` bol nasadený na HostCreators a vytvorený testovací Uptime Kuma monitor **#42 – TEST – HYBE – DOWN RECOVERY**. Samostatné doručenie Signal správ DOWN a RECOVERY zatiaľ nie je podložené screenshotom; používateľ potvrdil vykonaný recovery test.
+**Stav: PASS pre HTTP monitorovanie (200 → 503 → 200).** `health-test.php` bol nasadený na HostCreators a vytvorený testovací Uptime Kuma monitor **#42 – TEST – HYBE – DOWN RECOVERY**. Používateľ následne výslovne potvrdil, že **obe Signal oznámenia DOWN aj RECOVERY boli doručené**. Celý integračný test HTTP → Kuma → Signal je PASS.
 
 - Umiestnenie po nasadení: `/hybe/public/camera/health-test.php` (samostatný endpoint vedľa produkčného `health.php`).
 - **Normálne HTTP 200** (`status=ok`); po vytvorení `/hybe/public/camera/hybe-monitor-test-down.flag` vracia **HTTP 503** (`status=down`); po odstránení flagu znovu **HTTP 200**. Stav nemožno prepínať cez GET/POST URL a skript sa vôbec nedotýka `latest.jpg`.
 - JSON vracia `service=hybe-camera-monitor-test`, `test_only=true`, `checked_at` a `reason`. Cache je zakázaná.
 - Lokálne testy PHP syntaxe a simulovaného webservera **PASS: HTTP 200 → 503 → 200**.
 - **Produkčný test Uptime Kuma #42:** UP o **20:36:58** (`200 – OK`) → DOWN o **20:39:58** (`Request failed with status code 503`) → UP/RECOVERY o **20:41:58** (`200 – OK`). Screenshot monitora potvrdzuje správne prepnutie stavov, finálny stav **Dostupné** a poslednú odozvu 89 ms.
-- Test vykonaný cez samostatný endpoint, bez nutnosti upraviť produkčný `health.php`, `latest.jpg`, Publisher alebo monitor #41. Doručenie oboch notifikácií Signal ešte treba potvrdiť osobitne (screenshot Uptime Kuma nepreukazuje doručenie).
+- Test vykonaný cez samostatný endpoint, bez nutnosti upraviť produkčný `health.php`, `latest.jpg`, Publisher alebo monitor #41. Doručenie oboch notifikácií Signal následne používateľ potvrdil (vlastné skúsenosti, nie zo screenshotu).
 - **Upratovanie:** po úspešnom teste zrušiť dočasný monitor a testovacie súbory, ak už nebudú potrebné; produkčný monitor #41 ponechať.
+
+**Záver M2/testu:** monitor #42 má overené UP → DOWN → RECOVERY a obe Signal notifikácie; monitor #41 zostáva produkčný. Odstránenie testovacích artefaktov zatiaľ nebolo potvrdené.
+
+### M3 – Uptime Kuma Push heartbeat Publishera (implementácia a nasadenie 6.–7. 11. 2026)
+
+**Stav:** voliteľný heartbeat je **nasadený na produkčnom Linux Mint (IdeaPad)** a monitorovaný Uptime Kuma (Push monitor #43). Produkčný súbor `arenti_heartbeat.py` s diagnostikou časovania bol 7. 11. 2026 prenesený **bajtovo identicky** do vetvy `feat/kuma-push-heartbeat-20261106` (draft PR #2; git blob SHA `8297f94d6f8a5ea6863312630e2bdf2066e826e8`). Lokálna citlivá konfigurácia obsahuje `timeout_seconds=8`, zatiaľ čo verejný konfiguračný vzor zostáva generický. Spojenie IdeaPad → Synology cez ZeroTier i produkčné Push odosielanie boli reálne overené. Prerušované `TimeoutError` počas čakania na HTTP hlavičky zostávajú otvorenou chybou (pozri M4).
+
+- Nový modul `arenti_heartbeat.py` odosiela voliteľný HTTP(s) GET na `/api/push/<token>` až po úspešnom `ftp_upload()` (potvrdený FTP rename). Volanie je preskočené v režime `--dry-run`.
+- Voliteľné nastavenia `[monitoring]` v lokálnom `arenti_config.ini` (práva 0600): `enabled`, `push_url`, `allow_private_http`, `timeout_seconds`. V repozitári iba neaktívny vzor s prázdnou URL; **skutočný token nezapisovať do GitHubu ani HELP.md**.
+- Predvolený stav: vypnuté, aby ostatné inštalácie fungovali bez zmeny. HTTPS alebo explicitne povolené HTTP len na privátnu IP (napr. cez ZeroTier), bez presmerovaní; logy nesmú obsahovať URL ani token. Pridané `host_header` pre Synology nginx virtual-host (napr. `monitoring:3001`) pri súkromnom HTTP; pripojenie smeruje na privátnu IP a prostredie HTTP proxy sa ignoruje.
+- Push dostáva `status=up`, `msg=FTPS upload OK`, `ping=<trvanie cyklu v ms>`. Ak FTP/RTSP zlyhá alebo systemd nevykoná Publisher, heartbeat nepríde. Chyba spojenia s Kumou **nezmení úspech FTPS cyklu na zlyhanie** (iba varovanie typu `HEARTBEAT FAIL`).
+- Vo vetve GitHub je 12 izolovaných unit testov modulu (10 pôvodných + 2 pre diagnostické časy a redakciu timeout logu); ich spustenie na finálnom GitHub zdroji ešte treba overiť. Na IdeaPade chýba lokálny `tests/test_heartbeat.py`; merací patch M4.1b prešiel 4/4 lokálnymi izolovanými testami. **Produkčný end-to-end Push prebehol**: Kuma zaznamenala viaceré pravidelné úspešné heartbeaty a pri niektorých klientske timeouty (podrobnosti M4).
+- Navrhovaný nový Push monitor v Uptime Kuma: `HYBE – Arenti C3 – Publisher heartbeat`, očakávanie **420 s**, **1 opakovanie** s odstupom **60 s**, Signal DOWN/RECOVERY. Toto je samostatný monitor od HTTP checku produkčnej snímky #41.
+- **Overená sieť 6. 11. 2026:** IdeaPad ZeroTier `192.168.196.12/24`; `192.168.196.150:3001` aj `192.168.2.150:3001` cez IP bez Host vracajú nginx `404`. Prístup pomocou `--resolve monitoring:3001:<IP>` a URL `http://monitoring:3001/api/entry-page` cez obe IP vrátil **HTTP 200**, JSON `{"type":"entryPage","entryPage":"dashboard"}`. Preto Push musí odosielať `Host: monitoring:3001` aj pri spojení na privátnu IP `192.168.196.150`. Konkrétny Push token nikdy neukladať do logu/repozitára.
+- **Produkčné nasadenie:** Push monitor v Synology nastavený na 420 s, retries 1, retry delay 60 s a opakované oznámenia 0; smerovanie s explicitným `Host` na IdeaPade bolo potvrdené. Súbor s tokenom zostáva lokálny (režim 0600). V reálnych cykloch sa potvrdili `UPLOAD OK`, `HEARTBEAT OK` aj `CYKLUS OK`; občasné chybové potvrdenia `HEARTBEAT FAIL: TimeoutError` neblokujú FTPS a niektoré zodpovedajú heartbeatom, ktoré server neskôr zapísal. Pred finálnym release treba overiť aktuálne zapnutie Signal/e-mail oznámení a dokončiť synchronizáciu.
+- **Rollback:** `enabled=no` alebo odstrániť sekciu `[monitoring]` a vrátiť predchádzajúcu verziu skriptu z vytvorenej zálohy. Systemd timer ostáva nezmenený.
+
+## M4 – Regresný audit produkcie (7. 11. 2026)
+
+**Stav:** M4.2 regresný audit v2 **22 PASS / 2 WARN / 0 FAIL** na produkčnom notebooku `mpca86@ideapad` (7. 11. 2026, približne 01:41 CET). Ide o **PASS s otvorenými upozorneniami**, nie o bezchybný monitoring. Diagnostický skript `/home/mpca86/arenti_m4_2_regression_readonly_v2.py` bežal iba na čítanie. Údaje pochádzajú z lokálneho testovacieho výstupu. Následná synchronizácia kódu s vetvou PR #2 je zaznamenaná nižšie v M4.4c; auditu M4.2 spätne nemeníme počet WARN.
+
+### Produkčné komponenty a overené testy
+
+- **systemd user timer:** `active`, `enabled`, plán `OnCalendar=*-*-* *:04/5:00`, `AccuracySec=1s`, `RandomizedDelaySec=0`; service typu `oneshot` je po cykle `inactive` (očakávané). **RTC watchdog timer:** `active`. Test neprináša dôkaz o úspešnom fyzickom prebudení zo suspendu.
+- **Zdrojový kód a konfigurácia:** Python syntax troch lokálnych modulov `arenti_publisher.py`, `arenti_heartbeat.py`, `install_timer.py` PASS; FFmpeg filter `delogo` nájdený v kóde; `ffmpeg` a `curl` dostupné. Citlivá konfigurácia má práva `0600`. Monitoring aktívny, súkromná HTTP cesta a `Host` overené, `timeout_seconds=8`.
+- **Lokálna snímka:** formát JPEG, 2560×1440, jasový rozptyl `luma_stddev=9.7`, veľkosť približne 70,5 kB, vek v okamihu auditu 129 s. **Verejná snímka:** HTTP 200, `image/jpeg`. **HostCreators `health.php`:** HTTP 200, `status=ok`, vek 128 s, 2560×1440.
+- **Posledné dve hodiny pri audite:** `KVALITA OK=24`, `UPLOAD OK=24`, `CYKLUS OK=24`, `CYKLUS FAIL=0`; interval úspešných cyklov 26,6 až 34,9 s. FTPS publikovanie **24/24 PASS**, bez zlyhaných cyklov.
+- **Uptime Kuma REST API:** HTTP 200; lokálne izolované heartbeat mock testy PASS bez skutočného Push. Vytvorený Push monitor `HYBE – Arenti C3 – Publisher heartbeat` (ID 43). Kuma na Synology aktualizovaná na **2.5.9**; monitor nastavený na pulz **420 s**, **1 opakovanie** v intervale **60 s**, opakované oznamovanie **0**. Stav zapnutia produkčných Signal/e-mail oznámení ešte pred uzavretím release znovu overiť.
+- **HTTP DOWN/RECOVERY a Signal:** predchádzajúci test izolovaného monitora #42 s HTTP 200 → 503 → 200 a potvrdeným prijatím oboch správ Signal je PASS; nepreukazuje automaticky notifikácie produkčného Push monitora #43.
+
+### WARN 1 – Prerušované HTTP timeouty pri heartbeate (otvorené)
+
+- V dvojhodinovom audite **18× `HEARTBEAT OK`, 6× `HEARTBEAT FAIL: TimeoutError`**; cyklus i FTPS aj pri týchto varovaniach zostali úspešné. Zlyhania sa nesmú považovať automaticky za stratené Push dáta.
+- Lokálny diagnostický patch M4.1b zaznamenáva `headers_ms`, `body_ms`, `total_ms`, `phase`, `elapsed_ms` bez Push tokenu. Príklad 7. 11. o 00:34:34,851 CET: `TimeoutError phase=headers elapsed_ms=8055` po úspešnom FTPS. Databáza Kuma zaznamenala o 00:34:43,090 CET (23:34:43,090 UTC) `status=1`, `msg=FTPS upload OK`, `ping=26357`; nejde o potvrdenú dobu sieťovej odozvy, ale o klientom dodané trvanie Publishera.
+- Ručné testy mali rýchlu odozvu (20/20 bežných GET cez ZeroTier a 5/5 paralelných GET). Zatiaľ **nie je preukázané**, či oneskorenie vzniká na klientskej sieťovej trase, nginx alebo pri vybavovaní Push endpointu. Nezvyšovať timeout naslepo a nezapínať automatické retry bez testu duplicít. Heartbeat zostáva best-effort a nesmie blokovať FTP cyklus.
+
+### WARN 2 – Nesúlad lokálneho inštalátora timera (vyriešené v M4.4c)
+
+- V pôvodnom M4.2 audite (01:41 CET) lokálny `install_timer.py` nemal `timer_schedule()`, preto bol správne hlásený WARN; **tento historický výsledok 22 PASS / 2 WARN / 0 FAIL nemeníme spätne**.
+- **7. 11. 2026 približne 10:47 CET:** IdeaPad stiahol GitHub `install_timer.py` z overenej revízie `06c81482978550f3f815a4da8bdbcf79d7c49948`; SHA Git blob `bc634a53008f4e5b34bdda4ee2c041fa57538fad` bol pred uložením aj po ňom skontrolovaný. Záloha starého lokálneho súboru: `/home/mpca86/arenti-publisher/install_timer.py.bak-m44-20261107-104739`.
+- **Jednotkové testy na IdeaPade:** 12 heartbeat + 8 timer = **20/20 PASS** (0,039 s), izolované v dočasnom priečinku, bez reálnych HTTP Push či FTP volaní. Hlásenia `HEARTBEAT FAIL` pri testoch neplatných parametrov sú očakávané, nie produkčné výpadky.
+- Inštalátor sa **nespúšťal**; neprepísal aktívne user systemd jednotky a Publisher sa nereštartoval. Funkcia `timer_schedule()` sa teraz nachádza aj v lokálnej kópii. Pri budúcich zmenách nevyvolávať `install_timer.py` bez samostatného schválenia: prepíše systemd jednotky.
+
+### M4.4d–M4.4e – Finálna kontrola súladu a RTC watchdog (7. 11. 2026)
+
+**M4.4d: PASS** – na IdeaPade boli porovnané lokálne súbory s presnými Git blob SHA v GitHub feature vetve. Výsledok: **3/3 PASS**: `arenti_publisher.py` (`8684866940ed56f0d83e6dc17438b1f84fd9559c`), `arenti_heartbeat.py` (`8297f94d6f8a5ea6863312630e2bdf2066e826e8`) a `install_timer.py` (`bc634a53008f4e5b34bdda4ee2c041fa57538fad`). Používateľský timer `arenti-publisher.timer` bol `active`. Kontrola `arenti-rtc-wakeup.timer` cez `systemctl --user` v tomto kroku chybne vrátila `inactive`, pretože RTC timer patrí do **system** scope.
+
+**M4.4e: PASS** – opakovaná kontrola RTC timeru správnym systémovým `systemctl` (bez `--user`) potvrdila:
+
+- `arenti-rtc-wakeup.timer`: **active**, **enabled**, `LoadState=loaded`;
+- Unit: `/etc/systemd/system/arenti-rtc-wakeup.timer`;
+- `OnCalendar=*-*-* *:00/10:00` (každých 10 minút), `WakeSystem=true`, `AccuracySec=1s`;
+- Na screenshote z približne 10:52 CET: predchádzajúci plánovaný beh o 10:50 CET, nasledujúci o 11:00 CET;
+- `journalctl -u arenti-rtc-wakeup.service`: periodické spustenia, úspešné dokončenie `Deactivated successfully` / `Finished` a hlásenie `RTC_WAKE_TIMER_TICK`.
+
+**Limit dôkazu:** aktívny systémový timer a úspešné tick-y **nepreukazujú fyzické prebudenie zo suspendu**; na to treba osobitný kontrolovaný test s prístupom na zariadenie alebo nezávislé zaznamenanie prebudenia. Žiadna produkčná služba nebola pri M4.4d/e zmenená či reštartovaná.
+
+**Záver M4 synchronizácie:** zdrojové súbory 3/3 PASS, jednotkové testy M4.4c 20/20 PASS, regresný audit M4.2 pôvodne 22 PASS / 2 WARN / 0 FAIL, nesúlad inštalátora uzavretý a RTC timer overený. **Zostáva známy otvorený problém s občasným `TimeoutError` HTTP heartbeatu**, sledovaný v [issue #3](https://github.com/mpca86/arenti-c3-snapshot-publisher/issues/3); úspešné FTPS cykly tým nie sú blokované. Pre zlúčenie PR #2 bol otvorený problém explicitne prijatý ako dočasné, zdokumentované obmedzenie. **Stav zapnutia produkčných Signal/e-mail oznámení na Push monitore #43 nebol v tomto kroku nezávisle overený.** Projektové testy nepotvrdili odstránenie HTTP timeoutu.
+
+### Zálohy a release rozhodnutie
+
+- Konfigurácia pred zmenou timeoutu: `/home/mpca86/arenti-publisher/arenti_config.ini.bak-20261106-235310`; pôvodný heartbeat modul pred diagnostickým patchom: `/home/mpca86/arenti-publisher/arenti_heartbeat.py.bak-m4-20261107-002430`. Zálohy obsahujú súkromné dáta; **nepridávať do GitHubu**.
+- Výsledok historického auditu M4.2: **22 PASS / 2 WARN / 0 FAIL**. Po M4.4c je **WARN 2 uzavretý**: produkčný heartbeat bol byte-identicky zosúladený s GitHubom, `install_timer.py` synchronizovaný a **20/20 izolovaných testov PASS**. **Zostáva otvorený WARN 1:** občasné klientske `TimeoutError` pri heartbeate. Ide o best-effort upozornenie, ktoré nemení úspešnosť publikovania. Po synchronizácii odporúčaný finálny read-only smoke test aktívneho timeru, kontrola stavu upozornení Signal/e-mail na monitore #43 a kontrola, že lokálne súbory zostali zhodné. **Release rozhodnutie (7. 11. 2026):** Po M4.4d/e a 20/20 izolovaných testoch je regresná a zdrojová synchronizácia ukončená; známy timeout je evidovaný v [GitHub issue #3](https://github.com/mpca86/arenti-c3-snapshot-publisher/issues/3) a prijatý ako neblokujúce obmedzenie **best-effort monitoringu**, nie ako vyriešená chyba. PR #2 možno zlúčiť do `main`; verifikácia nastavenia notifikácií na monitore #43 a fyzického wake zo suspendu zostáva mimo rozsahu potvrdených testov.**
+- Presné Push URL/token, RTSP/FTP heslá a ďalšie tajomstvá sa do `HELP.md`, logov ani repozitára nesmú zapisovať.
 
 ## Známe obmedzenia
 
