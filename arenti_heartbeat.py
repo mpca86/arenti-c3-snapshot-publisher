@@ -6,6 +6,7 @@ import ipaddress
 import json
 import logging
 import re
+import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -24,6 +25,8 @@ def send_success_heartbeat(config, elapsed_seconds, logger=None):
     never on a dry run. Push URL is private configuration, not a CLI arg.
     """
     log = logger or logging.getLogger('arenti')
+    phase = 'config'
+    started = time.monotonic()
     try:
         if not config.has_section('monitoring'):
             return False
@@ -74,15 +77,24 @@ def send_success_heartbeat(config, elapsed_seconds, logger=None):
         request = Request(url, headers=headers)
         # Direct to ZeroTier IP; do not use environment proxies or redirects.
         opener = build_opener(ProxyHandler({}), _NoRedirect())
+        phase = 'headers'
         with opener.open(request, timeout=timeout) as response:
+            headers_ms = round((time.monotonic() - started) * 1000)
             if response.status != 200:
                 raise ValueError('non-200 from push API')
-            result = json.loads(response.read(4096).decode('utf-8'))
+            phase = 'body'
+            body_started = time.monotonic()
+            raw = response.read(4096)
+            body_ms = round((time.monotonic() - body_started) * 1000)
+            result = json.loads(raw.decode('utf-8'))
             if not isinstance(result, dict) or result.get('ok') is not True:
                 raise ValueError('unexpected Kuma response')
-        log.info('HEARTBEAT OK: Kuma Push prijal potvrdenie')
+        log.info('HEARTBEAT OK: Kuma Push prijal potvrdenie headers_ms=%d body_ms=%d total_ms=%d',
+                 headers_ms, body_ms, round((time.monotonic() - started) * 1000))
         return True
     except Exception as exc:
         # Never include URL, token, or exception string in logs.
-        log.warning('HEARTBEAT FAIL: %s', type(exc).__name__)
+        log.warning('HEARTBEAT FAIL: %s phase=%s elapsed_ms=%d',
+                    type(exc).__name__, phase,
+                    round((time.monotonic() - started) * 1000))
         return False
